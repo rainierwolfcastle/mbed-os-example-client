@@ -81,149 +81,38 @@ InterruptIn unreg_button(SW3);
 Ticker timer;
 #endif
 
-// LED Output
-DigitalOut led1(LED1);
-
-/*
- * The Led contains one property (pattern) and a function (blink).
- * When the function blink is executed, the pattern is read, and the LED
- * will blink based on the pattern.
- */
-class LedResource {
+class TemperatureResource {
 public:
-    LedResource() {
-        // create ObjectID with metadata tag of '3201', which is 'digital output'
-        led_object = M2MInterfaceFactory::create_object("3201");
-        M2MObjectInstance* led_inst = led_object->create_object_instance();
-
-        // 5853 = Multi-state output
-        M2MResource* pattern_res = led_inst->create_dynamic_resource("5853", "Pattern",
-            M2MResourceInstance::STRING, false);
-        // read and write
-        pattern_res->set_operation(M2MBase::GET_PUT_ALLOWED);
-        // set initial pattern (toggle every 200ms. 7 toggles in total)
-        pattern_res->set_value((const uint8_t*)"500:500:500:500:500:500:500", 27);
-
-        // there's not really an execute LWM2M ID that matches... hmm...
-        M2MResource* led_res = led_inst->create_dynamic_resource("5850", "Blink",
-            M2MResourceInstance::OPAQUE, false);
-        // we allow executing a function here...
-        led_res->set_operation(M2MBase::POST_ALLOWED);
-        // when a POST comes in, we want to execute the led_execute_callback
-        led_res->set_execute_function(execute_callback(this, &LedResource::blink));
-    }
-
-    M2MObject* get_object() {
-        return led_object;
-    }
-
-    void blink(void *) {
-        // read the value of 'Pattern'
-        M2MObjectInstance* inst = led_object->object_instance();
-        M2MResource* res = inst->resource("5853");
-
-        // values in mbed Client are all buffers, and we need a vector of int's
-        uint8_t* buffIn = NULL;
-        uint32_t sizeIn;
-        res->get_value(buffIn, sizeIn);
-
-        // turn the buffer into a string, and initialize a vector<int> on the heap
-        std::string s((char*)buffIn, sizeIn);
-        std::vector<uint32_t>* v = new std::vector<uint32_t>;
-
-        output.printf("led_execute_callback pattern=%s\r\n", s.c_str());
-
-        // our pattern is something like 500:200:500, so parse that
-        std::size_t found = s.find_first_of(":");
-        while (found!=std::string::npos) {
-
-            v->push_back(atoi((const char*)s.substr(0,found).c_str()));
-            s = s.substr(found+1);
-            found=s.find_first_of(":");
-            if(found == std::string::npos) {
-                v->push_back(atoi((const char*)s.c_str()));
-            }
-        }
-
-
-        // do_blink is called with the vector, and starting at -1
-        do_blink(v, 0);
-    }
-
-private:
-    M2MObject* led_object;
-
-    void do_blink(std::vector<uint32_t>* pattern, uint16_t position) {
-        // blink the LED
-        led1 = !led1;
-
-        // up the position, if we reached the end of the vector
-        if (position >= pattern->size()) {
-            // free memory, and exit this function
-            delete pattern;
-            return;
-        }
-
-        // how long do we need to wait before the next blink?
-        uint32_t delay_ms = pattern->at(position);
-
-        // Invoke same function after `delay_ms` (upping position)
-        Thread::wait(delay_ms);
-        do_blink(pattern, ++position);
-    }
-};
-
-/*
- * The button contains one property (click count).
- * When `handle_button_click` is executed, the counter updates.
- */
-class ButtonResource {
-public:
-    ButtonResource(): counter(0) {
-        // create ObjectID with metadata tag of '3200', which is 'digital input'
-        btn_object = M2MInterfaceFactory::create_object("3200");
-        M2MObjectInstance* btn_inst = btn_object->create_object_instance();
-        // create resource with ID '5501', which is digital input counter
-        M2MResource* btn_res = btn_inst->create_dynamic_resource("5501", "Button",
-            M2MResourceInstance::INTEGER, true /* observable */);
-        // we can read this value
-        btn_res->set_operation(M2MBase::GET_ALLOWED);
-        // set initial value (all values in mbed Client are buffers)
-        // to be able to read this data easily in the Connector console, we'll use a string
-        btn_res->set_value((uint8_t*)"0", 1);        
-    }
-
-    ~ButtonResource() {
-    }
-
-    M2MObject* get_object() {
-        return btn_object;
-    }
-
-    /*
-     * When you press the button, we read the current value of the click counter
-     * from mbed Device Connector, then up the value with one.
-     */
-    void handle_button_click() {
-        M2MObjectInstance* inst = btn_object->object_instance();
-        M2MResource* res = inst->resource("5501");
-
-        // up counter
-        counter++;
-#ifdef TARGET_K64F
-        printf("handle_button_click, new value of counter is %d\r\n", counter);
-#else
-        printf("simulate button_click, new value of counter is %d\r\n", counter);
-#endif
-        // serialize the value of counter as a string, and tell connector
+    TemperatureResource() {
+        temperature_object = M2MInterfaceFactory::create_object("3303");
+        M2MObjectInstance* inst = temperature_object->create_object_instance();
+        M2MResource* res = inst->create_dynamic_resource("5700", "Temperature", M2MResourceInstance::FLOAT, true /* observable */);
+        res->set_operation(M2MBase::GET_ALLOWED);
+        float value = ((float)rand()/(float)(RAND_MAX)) * 30.0;
+        output.printf("Temperature [ %3.2f C ]\r\n", value);
         char buffer[20];
-        int size = sprintf(buffer,"%d",counter);
-        res->set_value((uint8_t*)buffer, size);
+        int size = sprintf(buffer, "%3.2f", value);
+        res->set_value((const uint8_t*) buffer, size);
+    }
+
+    M2MObject* get_object() {
+        return temperature_object;
+    }
+
+    void handle_update() {
+        M2MObjectInstance* inst = temperature_object->object_instance();
+        M2MResource* res = inst->resource("5700");
+
+        float value = ((float)rand()/(float)(RAND_MAX)) * 30.0;
+        output.printf("Temperature [ %3.2f C ]\r\n", value);
+
+        char buffer[20];
+        int size = sprintf(buffer, "%3.2f", value);
+        res->set_value((const uint8_t*) buffer, size);
     }
 
 private:
-    M2MObject* btn_object;
-    uint16_t counter;
+    M2MObject* temperature_object;
 };
 
 // Network interaction must be performed outside of interrupt context
@@ -251,7 +140,6 @@ void trace_printer(const char* str) {
 Ticker status_ticker;
 DigitalOut status_led(LED1);
 void blinky() { status_led = !status_led; }
-
 
 // Entry point to the program
 int main() {
@@ -313,9 +201,8 @@ Add MBEDTLS_NO_DEFAULT_ENTROPY_SOURCES and MBEDTLS_TEST_NULL_ENTROPY in mbed_app
         output.printf("No IP address\r\n");
     }
 
-    // we create our button and LED resources
-    ButtonResource button_resource;
-    LedResource led_resource;
+    // we create our temperature resource
+    TemperatureResource temperature_resource;
 
 #ifdef TARGET_K64F
     // On press of SW3 button on K64F board, example application
@@ -342,8 +229,7 @@ Add MBEDTLS_NO_DEFAULT_ENTROPY_SOURCES and MBEDTLS_TEST_NULL_ENTROPY in mbed_app
 
     // Add objects to list
     object_list.push_back(device_object);
-    object_list.push_back(button_resource.get_object());
-    object_list.push_back(led_resource.get_object());
+    object_list.push_back(temperature_resource.get_object());
 
     // Set endpoint registration object
     mbed_client.set_register_object(register_object);
@@ -363,8 +249,8 @@ Add MBEDTLS_NO_DEFAULT_ENTROPY_SOURCES and MBEDTLS_TEST_NULL_ENTROPY in mbed_app
         }
         if(clicked) {
            clicked = false;
-            button_resource.handle_button_click();
         }
+        temperature_resource.handle_update();
     }
 
     mbed_client.test_unregister();
